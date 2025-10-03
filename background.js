@@ -6,10 +6,11 @@ const executeJob = () => {
     jobInProgress = true;
     chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
         const currentTabId = tabs[0].id;
-        chrome.scripting.executeScript({
-            target: {tabId: currentTabId},
-            files: ["./modules/pdfkit.js", "./modules/blob-stream.js", "./src/ModifyDocSendView.js", "./src/GeneratePDF.js", "./src/DocSendDownloader.js"]
-        }, () => {
+        chrome.tabs.executeScript(currentTabId, {file: "./modules/pdfkit.js"});
+        chrome.tabs.executeScript(currentTabId, {file: "./modules/blob-stream.js"});
+        chrome.tabs.executeScript(currentTabId, {file: "./src/ModifyDocSendView.js"});
+        chrome.tabs.executeScript(currentTabId, {file: "./src/GeneratePDF.js"});
+        chrome.tabs.executeScript(currentTabId, {file: "./src/DocSendDownloader.js"}, () => {
             connection = chrome.tabs.connect(currentTabId);
             connection.postMessage({requestType: "GENERATE_PDF"});
             connection.onMessage.addListener((message) => {
@@ -28,51 +29,30 @@ chrome.runtime.onInstalled.addListener(() => {
             conditions: [new chrome.declarativeContent.PageStateMatcher({
                 pageUrl: {hostSuffix: 'docsend.com', pathContains: 'view'},
             })],
-            actions: [new chrome.declarativeContent.ShowAction()]
+            actions: [new chrome.declarativeContent.ShowPageAction()]
         }]);
     });
 });
 
 
-chrome.action.onClicked.addListener(() => {
-
-    chrome.declarativeNetRequest.updateSessionRules({
-        removeRuleIds: [1],
-        addRules: [{
-            id: 1,
-            priority: 1,
-            action: {
-                type: "modifyHeaders",
-                responseHeaders: [
-                    {header: "Access-Control-Allow-Origin", operation: "set", value: "*"},
-                    {header: "Access-Control-Allow-Methods", operation: "set", value: "GET, OPTIONS"}
-                ]
-            },
-            condition: {
-                urlFilter: "*://*.docsend.com/*",
-                resourceTypes: ["xmlhttprequest", "image", "main_frame", "sub_frame"]
-            }
-        }, {
-            id: 2,
-            priority: 1,
-            action: {
-                type: "modifyHeaders",
-                responseHeaders: [
-                    {header: "Access-Control-Allow-Origin", operation: "set", value: "*"},
-                    {header: "Access-Control-Allow-Methods", operation: "set", value: "GET, OPTIONS"}
-                ]
-            },
-            condition: {
-                urlFilter: "*://*.cloudfront.net/*",
-                resourceTypes: ["xmlhttprequest", "image", "main_frame", "sub_frame"]
-            }
-        }]
-    })
+chrome.pageAction.onClicked.addListener(() => {
+    
+    chrome.webRequest.onHeadersReceived.addListener(
+        function(response) {
+            response.responseHeaders.push({'name': "Access-Control-Allow-Origin", 'value': "*"});
+            response.responseHeaders.push({'name': "Access-Control-Allow-Methods", 'value': "GET, OPTIONS"});
+            return {responseHeaders: response.responseHeaders}
+        },
+        {
+            urls: ["https://*.docsend.com/*", "https://*.cloudfront.net/*"]
+        },
+        ["blocking", "responseHeaders", "extraHeaders"]
+    )
 
     if (jobComplete || jobInProgress) {
         try {
             connection.postMessage({requestType: "CHECK_PROGRESS"});
-        }
+        } 
         catch {
             //Connection closed, start new job
             executeJob();
